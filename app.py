@@ -23,7 +23,7 @@ def check_instagram(username, password, verification_code=None):
     
     try:
         # 掛載新竹住宅代理
-        cl.set_proxy(HOME_PROXY)
+        #cl.set_proxy(HOME_PROXY)
         
         if verification_code:
             print(f"[*] 使用驗證碼登入: @{username}")
