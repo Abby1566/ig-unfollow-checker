@@ -20,7 +20,7 @@ def check_instagram(username, password, verification_code=None):
     # 啟動住宅代理，繞過地區限制
     cl.set_proxy(HOME_PROXY)
     # 設定行為隨機延遲，防止被 IG 偵測為機器人
-    cl.delay_range = [2, 5]
+    cl.delay_range = [1, 3]
 
     try:
         if verification_code:
