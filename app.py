@@ -3,75 +3,72 @@ import json
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify
 from instagrapi import Client
+from instagrapi.exceptions import TwoFactorRequired, BadPassword, LoginRequired
 
 app = Flask(__name__)
 
 # --- 設定區 ---
-# 請確保這是你剛剛測試成功的公網 IP 與 Port
 HOME_PROXY = "http://1.164.104.46:5269"
 DATA_DIR = "data"
 
 if not os.path.exists(DATA_DIR):
     os.makedirs(DATA_DIR)
 
-# --- 工具函數 ---
-
-def get_snapshot_path(username):
-    return os.path.join(DATA_DIR, f"{username}_snapshot.json")
-
-def save_snapshot(username, followers, following):
-    """存檔快照"""
-    data = {
-        "timestamp": datetime.now().isoformat(),
-        "followers": followers,
-        "following": following,
-        "followers_count": len(followers),
-        "following_count": len(following)
-    }
-    with open(get_snapshot_path(username), "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
-
-def load_snapshot(username):
-    """讀取上次的快照"""
-    path = get_snapshot_path(username)
-    if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return None
-
-# --- 核心邏輯 ---
-
-def check_instagram(username, password):
+# --- 核心登入邏輯 ---
+def check_instagram(username, password, verification_code=None):
     cl = Client()
-    
-    # 1. 啟用你家樹莓派的住宅代理，這是抗封鎖的神盾
-    print(f"[*] 啟動安全機制：連線至住宅代理 {HOME_PROXY}")
+    # 啟動住宅代理，繞過地區限制
     cl.set_proxy(HOME_PROXY)
-    
-    # 2. 模擬真實用戶行為的延遲 (2~5秒)
+    # 設定行為隨機延遲，防止被 IG 偵測為機器人
     cl.delay_range = [2, 5]
 
     try:
-        print(f"[*] 嘗試登入帳號: @{username}")
-        cl.login(username, password)
+        if verification_code:
+            print(f"[*] 嘗試使用驗證碼登入: @{username}")
+            cl.login(username, password, verification_code=verification_code)
+        else:
+            print(f"[*] 嘗試普通登入: @{username}")
+            cl.login(username, password)
         
+        # 登入成功，抓取名單
         user_id = cl.user_id_from_username(username)
+        followers = [u.username for u in cl.user_followers(user_id).values()]
+        following = [u.username for u in cl.user_following(user_id).values()]
         
-        print("[*] 正在抓取粉絲名單...")
-        followers_dict = cl.user_followers(user_id)
-        followers = [u.username for u in followers_dict.values()]
-        
-        print("[*] 正在抓取追蹤中名單...")
-        following_dict = cl.user_following(user_id)
-        following = [u.username for u in following_dict.values()]
-        
-        return followers, following, None
+        return {"status": "success", "followers": followers, "following": following}
+
+    except TwoFactorRequired:
+        return {"status": "2fa_required"}
+    except BadPassword:
+        return {"status": "error", "message": "密碼錯誤，請重新檢查。"}
     except Exception as e:
-        print(f"[!] 錯誤: {str(e)}")
-        return None, None, str(e)
+        return {"status": "error", "message": str(e)}
 
-# --- Flask 路由 ---
+# --- 快照功能 ---
+def handle_snapshots(username, new_followers, new_following):
+    path = os.path.join(DATA_DIR, f"{username}_snapshot.json")
+    unfollowers = []
+    new_fans = []
 
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            old_data = json.load(f)
+            old_f = set(old_data['followers'])
+            curr_f = set(new_followers)
+            unfollowers = list(old_f - curr_f)
+            new_fans = list(curr_f - old_f)
+
+    # 存入新快照
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({
+            "timestamp": datetime.now().isoformat(),
+            "followers": new_followers,
+            "following": new_following
+        }, f, ensure_ascii=False)
+    
+    return unfollowers, new_fans
+
+# --- 路由 ---
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -81,46 +78,35 @@ def api_check():
     data = request.json
     username = data.get('username')
     password = data.get('password')
+    code = data.get('verification_code')
 
     if not username or not password:
         return jsonify({"success": False, "message": "請輸入帳號密碼"})
 
-    # 執行掃描
-    new_followers, new_following, error = check_instagram(username, password)
-    
-    if error:
-        return jsonify({"success": False, "message": f"登入失敗: {error}"})
+    result = check_instagram(username, password, code)
 
-    # 讀取舊快照進行比對
-    old_data = load_snapshot(username)
+    if result["status"] == "2fa_required":
+        return jsonify({"success": False, "need_2fa": True, "message": "請輸入雙重驗證碼"})
     
-    unfollowers = []
-    new_fans = []
-    
-    if old_data:
-        # 比對邏輯：舊有但新名單沒有 = 退追了
-        old_followers = set(old_data['followers'])
-        curr_followers = set(new_followers)
-        
-        unfollowers = list(old_followers - curr_followers)
-        new_fans = list(curr_followers - old_followers)
+    if result["status"] == "error":
+        return jsonify({"success": False, "message": result["message"]})
 
-    # 存下本次掃描作為下次的快照
-    save_snapshot(username, new_followers, new_following)
+    # 處理名單比對
+    unfollowers, new_fans = handle_snapshots(username, result["followers"], result["following"])
 
     return jsonify({
         "success": True,
         "stats": {
-            "followers_count": len(new_followers),
-            "following_count": len(new_following),
+            "followers_count": len(result["followers"]),
+            "following_count": len(result["following"]),
             "unfollowers_count": len(unfollowers),
             "new_fans_count": len(new_fans)
         },
         "unfollowers": unfollowers,
-        "new_fans": new_fans,
-        "message": "掃描完成！已更新快照資料。"
+        "new_fans": new_fans
     })
 
 if __name__ == '__main__':
-    # 這裡 port 改成 8080，方便你內網測試
-    app.run(host='0.0.0.0', port=8080, debug=True)
+    # Render 會自動指定 PORT，我們監聽 0.0.0.0
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
