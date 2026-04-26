@@ -3,7 +3,7 @@ import json
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify
 from instagrapi import Client
-from instagrapi.exceptions import TwoFactorRequired, BadPassword, ProxyError
+from instagrapi.exceptions import TwoFactorRequired, BadPassword
 
 app = Flask(__name__)
 
