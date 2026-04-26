@@ -49,7 +49,7 @@ def check_instagram(username, password):
     cl.set_proxy(HOME_PROXY)
     
     # 2. 模擬真實用戶行為的延遲 (2~5秒)
-    cl.delay_range(2, 5)
+    cl.delay_range = [2, 5]
 
     try:
         print(f"[*] 嘗試登入帳號: @{username}")
