@@ -7,7 +7,7 @@ from instagrapi.exceptions import TwoFactorRequired, BadPassword
 
 app = Flask(__name__)
 
-# --- 核心設定 (請確保這組 IP 跟你的截圖一致) ---
+# --- 核心設定 (請確保 IP 是你目前 curl -4 ifconfig.me 看到的數字) ---
 HOME_PROXY = "http://1.164.104.46:5269"
 DATA_DIR = "data"
 
@@ -16,23 +16,23 @@ if not os.path.exists(DATA_DIR):
 
 def check_instagram(username, password, verification_code=None):
     cl = Client()
-    # 修正之前的語法錯誤：使用屬性賦值而非函數呼叫
-    cl.delay_range = [1, 3] 
-    # 設定超時，避免 Render 30 秒硬限制
+    # 縮短延遲範圍，避免超過 Render 的 30 秒大限
+    cl.delay_range = [1, 2] 
+    # 設定連線超時，避免無限卡死
     cl.request_timeout = 15 
     
     try:
-        # 掛載你家新竹的住宅代理
+        # 掛載新竹住宅代理
         cl.set_proxy(HOME_PROXY)
         
         if verification_code:
-            print(f"[*] 嘗試驗證碼登入: @{username}")
+            print(f"[*] 使用驗證碼登入: @{username}")
             cl.login(username, password, verification_code=verification_code)
         else:
-            print(f"[*] 嘗試普通登入: @{username}")
+            print(f"[*] 嘗試登入: @{username}")
             cl.login(username, password)
         
-        # 登入成功，抓取名單
+        # 抓取資料
         user_id = cl.user_id_from_username(username)
         followers = [u.username for u in cl.user_followers(user_id).values()]
         following = [u.username for u in cl.user_following(user_id).values()]
@@ -41,9 +41,12 @@ def check_instagram(username, password, verification_code=None):
 
     except TwoFactorRequired:
         return {"status": "2fa_required"}
-    except ProxyError:
-        return {"status": "error", "message": "代理連線失敗，請檢查家裡樹莓派與路由器。"}
     except Exception as e:
+        error_msg = str(e).lower()
+        if "proxy" in error_msg or "tunnel" in error_msg:
+            return {"status": "error", "message": "代理連線失敗，請檢查樹莓派與路由器。"}
+        if "bad_password" in error_msg:
+            return {"status": "error", "message": "密碼錯誤，請重新檢查。"}
         return {"status": "error", "message": str(e)}
 
 @app.route('/')
@@ -57,6 +60,9 @@ def api_check():
     password = data.get('password')
     code = data.get('verification_code')
 
+    if not username or not password:
+        return jsonify({"success": False, "message": "請輸入帳密"})
+
     result = check_instagram(username, password, code)
 
     if result["status"] == "2fa_required":
@@ -65,15 +71,14 @@ def api_check():
     if result["status"] == "error":
         return jsonify({"success": False, "message": result["message"]})
 
-    # 比對邏輯 (簡單化處理)
-    # 這裡可以加入你之前的 snapshot 邏輯，但為了穩定先回傳基本數據
+    # 回傳結果
     return jsonify({
         "success": True,
         "stats": {
             "followers_count": len(result["followers"]),
             "following_count": len(result["following"])
         },
-        "message": "掃描成功！"
+        "message": "掃描完成！"
     })
 
 if __name__ == '__main__':
