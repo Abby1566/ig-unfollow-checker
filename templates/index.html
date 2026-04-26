@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>IG 檢查器</title>
+    <style>
+        body { font-family: sans-serif; background: #fafafa; display: flex; justify-content: center; padding: 50px; }
+        .card { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 400px; }
+        input { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 5px; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; background: #0095f6; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        #res { margin-top: 20px; font-size: 14px; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>IG 粉絲檢查器</h2>
+        <input type="text" id="u" placeholder="帳號">
+        <input type="password" id="p" placeholder="密碼">
+        <button onclick="check()">開始分析</button>
+        <div id="res"></div>
+    </div>
+
+    <script>
+        async function check() {
+            const resDiv = document.getElementById('res');
+            resDiv.innerText = "掃描中，請稍候...";
+            const r = await fetch('/api/check', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({username: document.getElementById('u').value, password: document.getElementById('p').value})
+            });
+            const data = await r.json();
+            if(data.success) {
+                resDiv.innerText = `粉絲: ${data.stats.followers}\n追蹤中: ${data.stats.following}\n\n⚠️ 沒回關你的人:\n${data.not_following_back.join(', ')}\n\n📉 誰退追你了:\n${data.lost_followers.join(', ') || '無變動'}`;
+            } else {
+                resDiv.innerText = "錯誤: " + data.error;
+            }
+        }
+    </script>
+</body>
+</html>
