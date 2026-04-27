@@ -8,7 +8,7 @@ from instagrapi.exceptions import TwoFactorRequired, BadPassword
 app = Flask(__name__)
 
 # --- 核心設定 (請確保 IP 是你目前 curl -4 ifconfig.me 看到的數字) ---
-HOME_PROXY = "http://1.164.104.46:5269"
+HOME_PROXY = "https://simmering-motion-borrowing.ngrok-free.dev"
 DATA_DIR = "data"
 
 if not os.path.exists(DATA_DIR):
